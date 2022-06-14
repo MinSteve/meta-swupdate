@@ -1,0 +1,11 @@
+--- sources/meta-swupdate/conf/layer.conf.orig	2021-05-30 18:42:49.077627496 +0800
++++ sources/meta-swupdate/conf/layer.conf	2021-05-30 18:44:22.034292367 +0800
+@@ -5,6 +5,8 @@
+ BBFILES += "${LAYERDIR}/recipes-*/*/*.bb \
+ 	${LAYERDIR}/recipes-*/*/*.bbappend"
+ 
++BBMASK = "${LAYERDIR}/recipes-devtools"
++
+ BBFILE_COLLECTIONS += "swupdate"
+ BBFILE_PATTERN_swupdate := "^${LAYERDIR}/"
+ BBFILE_PRIORITY_swupdate = "6"

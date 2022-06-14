@@ -1,0 +1,11 @@
+--- sources/meta-swupdate/recipes-extended/images/swupdate-image.bb.orig	2021-07-15 13:51:01.440674023 +0800
++++ sources/meta-swupdate/recipes-extended/images/swupdate-image.bb	2021-07-15 13:52:00.681028458 +0800
+@@ -6,3 +6,8 @@ LICENSE = "MIT"
+ require swupdate-image.inc
+ 
+ IMAGE_ROOTFS_SIZE = "8192"
++
++
++
++
++PACKAGE_EXCLUDE += " jailhouse kernel-module-jailhouse libncursesw5 libpanelw5 libpython3 libreadline8 python3*  perl* apt dpkg "

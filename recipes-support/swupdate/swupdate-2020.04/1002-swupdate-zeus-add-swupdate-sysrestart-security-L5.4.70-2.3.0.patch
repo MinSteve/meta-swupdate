@@ -1,0 +1,143 @@
+--- sources/meta-swupdate/recipes-support/swupdate/swupdate.orig/swupdate-sysrestart.service    1970-01-01 08:00:00.000000000 +0800
++++ sources/meta-swupdate/recipes-support/swupdate/swupdate/swupdate-sysrestart.service 2021-05-20 14:05:37.921783518 +0800
+@@ -0,0 +1,11 @@
++[Unit]
++Description=swupdate-sysrestart daemon
++Documentation=https://github.com/sbabic/swupdate
++Documentation=https://sbabic.github.io/swupdate
++
++[Service]
++ExecStart=/usr/bin/swupdate-sysrestart -w
++KillMode=mixed
++
++[Install]
++WantedBy=multi-user.target
+
+
+--- sources/meta-swupdate/recipes-support/swupdate/swupdate.inc.orig	2021-05-20 14:09:58.618249834 +0800
++++ sources/meta-swupdate/recipes-support/swupdate/swupdate.inc	2021-05-20 14:31:05.772576322 +0800
+@@ -21,6 +21,7 @@
+     file://swupdate \
+     file://swupdate.sh \
+     file://swupdate.service \
++    file://swupdate-sysrestart.service \
+     file://swupdate.socket.tmpl \
+     file://swupdate-usb.rules \
+     file://swupdate-usb@.service \
+@@ -28,6 +29,8 @@
+     file://tmpfiles-swupdate.conf \
+     file://10-mongoose-args \
+     file://90-start-progress \
++    file://swupdate.cfg \
++    file://swu_public.pem \
+ "
+ 
+ LTOEXTRA += "-flto-partition=none"
+@@ -42,7 +45,6 @@
+     ${PN}-www \
+ "
+ INSANE_SKIP_${PN}-lua = "dev-so"
+-wwwdir ?= "/www"
+ 
+ # tools is now an empty meta package for backward compatibility
+ ALLOW_EMPTY_${PN}-tools = "1"
+@@ -67,11 +69,12 @@
+     ${libdir}/swupdate/* \
+     ${systemd_system_unitdir}/swupdate.socket \
+     ${systemd_system_unitdir}/swupdate.service \
++    ${systemd_system_unitdir}/swupdate-sysrestart.service \
+     ${sysconfdir}/init.d/* \
+ "
+ FILES_${PN}-www = " \
+     ${libdir}/swupdate/conf.d/*mongoose* \
+-    ${wwwdir}/* \
++    /www/* \
+ "
+ 
+ RDEPENDS_${PN}-usb += "${PN}-client"
+@@ -176,7 +179,7 @@
+         depends += ' zstd'
+ 
+     if 'CONFIG_DISKPART=y\n' in features:
+-        depends += ' util-linux e2fsprogs'
++        depends += ' util-linux'
+ 
+     d.setVar('DEPENDS', depends)
+ 
+@@ -184,10 +187,15 @@
+         d.setVar('SWUPDATE_MONGOOSE', 'true')
+     else:
+         d.setVar('SWUPDATE_MONGOOSE', 'false')
+-
++    
+     if 'CONFIG_MONGOOSE_WEB_API_V2=y\n' in features:
+         d.setVar('SWUPDATE_WWW', 'webapp')
+ 
++    if 'CONFIG_SIGNED_IMAGES=y\n' in features:
++        d.setVar('SWUPDATE_SIGNED_IMAGES', 'true')
++    else:
++        d.setVar('SWUPDATE_SIGNED_IMAGES', 'false')
++
+     # Values not used here might be used in a bbappend
+     d.setVar('SWUPDATE_SOCKET_CTRL_PATH', '/tmp/sockinstctrl')
+     d.setVar('SWUPDATE_SOCKET_PROGRESS_PATH', '/tmp/swupdateprog')
+@@ -227,11 +235,11 @@
+ do_install () {
+     (cd ${S} && oe_runmake install)
+ 
+-    install -m 0755 -d ${D}${wwwdir}
++    install -m 0755 -d ${D}/www
+     if [ -d ${S}/web-app ];then
+-        cp -R --no-dereference --preserve=mode,links -v ${S}/examples/www/v2/* ${D}${wwwdir}
++        cp -R --no-dereference --preserve=mode,links -v ${S}/examples/www/v2/* ${D}/www
+     else
+-        install -m 0755 ${S}/www/* ${D}${wwwdir}
++        install -m 0755 ${S}/www/* ${D}/www
+     fi
+ 
+     install -d ${D}${sysconfdir}/init.d
+@@ -245,9 +253,14 @@
+     if ${SWUPDATE_MONGOOSE}; then
+         install -m 644 ${WORKDIR}/10-mongoose-args ${D}${libdir}/swupdate/conf.d/
+     fi
++    if ${SWUPDATE_SIGNED_IMAGES}; then
++        install -m 644 ${WORKDIR}/swupdate.cfg ${D}/${sysconfdir}
++        install -m 644 ${WORKDIR}/swu_public.pem ${D}/${sysconfdir}
++    fi
+     install -d ${D}${systemd_unitdir}/system
+     install -m 644 ${WORKDIR}/swupdate.service ${D}${systemd_system_unitdir}
+     sed -i 's#@LIBDIR@#${libdir}#' ${D}${systemd_system_unitdir}/swupdate.service
++    install -m 644 ${WORKDIR}/swupdate-sysrestart.service ${D}${systemd_system_unitdir}
+     install -m 644 ${WORKDIR}/swupdate.socket.tmpl ${D}${systemd_system_unitdir}/swupdate.socket
+     sed -e "s,@@SWUPDATE_SOCKET_CTRL_PATH@@,${SWUPDATE_SOCKET_CTRL_PATH},g" \
+         -e "s,@@SWUPDATE_SOCKET_PROGRESS_PATH@@,${SWUPDATE_SOCKET_PROGRESS_PATH},g" \
+@@ -270,6 +283,6 @@
+ INITSCRIPT_PARAMS = "defaults 70"
+ 
+ SYSTEMD_PACKAGES = "${PN} ${PN}-progress ${PN}-usb"
+-SYSTEMD_SERVICE_${PN} = "swupdate.service swupdate.socket"
++SYSTEMD_SERVICE_${PN} = "swupdate.service swupdate-sysrestart.service swupdate.socket"
+ SYSTEMD_SERVICE_${PN}-progress = "swupdate-progress.service"
+ SYSTEMD_SERVICE_${PN}-usb = "swupdate-usb@.service"
+
+--- sources/meta-swupdate/recipes-support/swupdate.orig/swupdate/swupdate.cfg	1970-01-01 08:00:00.000000000 +0800
++++ sources/meta-swupdate/recipes-support/swupdate/swupdate/swupdate.cfg	2021-05-20 13:24:39.548292483 +0800
+@@ -0,0 +1,5 @@
++globals :
++{
++
++        public-key-file = "/etc/swu_public.pem";
++};
+
+--- sources/meta-swupdate/recipes-support/swupdate/swupdate.orig/swu_public.pem	1970-01-01 08:00:00.000000000 +0800
++++ sources/meta-swupdate/recipes-support/swupdate/swupdate/swu_public.pem	2021-07-08 19:02:49.559662839 +0800
+@@ -0,0 +1,9 @@
++-----BEGIN PUBLIC KEY-----
++MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuV2pcGJeE46HhV9sdDnG
++2C1/eCGywNzND2gTG67hXU97xK37EBT9Vdeuau2jZAaYrXskC1oyTLi7PjB6ReWd
++vzoAtklGWYYuSnnuB3w3gg3CXNR3P0bS9uEzyT/9medx4Mk02hSEDx9YHDv4aeVh
++5e9R+8Xu55hMHHIEeS7P2pSlihUfVfyGjv3UHrpRHfKj72y4WZD4c58oFweozty8
++4XHpc0ps0igzZjSsoutSG0Nqb7brp0/y1aRsJGsjN5cJng+IJJ9dNi2uTpjLisJ3
++RJOH7VAw/kuXujZ4nruFH9++xuhPeCIs1VKXw6G36mTq5t+Fw7ZDiisSGLg/Ycyf
++MwIDAQAB
++-----END PUBLIC KEY-----
